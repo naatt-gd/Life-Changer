@@ -5,6 +5,6 @@
  * Dejar los campos vacíos mantiene la aplicación en modo local.
  */
 window.REFORMANDOME_CLOUD = {
-  url: '',
-  publishableKey: ''
+  url: 'https://tbujonisvcrwmteaxmhu.supabase.co',
+  publishableKey: 'sb_publishable_m16O0JvAcaKIJQV3whD-xQ_SHAdbz3Y'
 };
