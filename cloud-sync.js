@@ -117,7 +117,14 @@
   entryRoot.setAttribute('role', 'main');
   entryRoot.setAttribute('aria-label', 'Acceso a Reformándome');
   document.body.appendChild(entryRoot);
-  function gate(state) {entry = state; entryRender();}
+  function gate(state) {
+    entry = state;
+    entryRender();
+    // v35: notificar a los módulos externos sin divulgar tokens ni datos privados.
+    window.dispatchEvent(new CustomEvent('reformandome:account-state', {
+      detail: { state, userId: user?.id || null }
+    }));
+  }
   function entryRender() {
     const hidden = entry === 'ready';
     document.body.classList.toggle('re-entry-locked', !hidden);
@@ -186,7 +193,11 @@
         <button class="re-action" onclick="location.reload()">Volver a intentar</button>
         ${localStorage.getItem(LINK) ? '<button class="re-back" onclick="RECloud.useOffline()">Continuar sin conexión con los datos locales de esta cuenta</button>' : ''}${alert}</section>`;
     }
-    entryRoot.innerHTML = `<div class="re-shell">${head}${inside}<p class="re-foot">Tus datos pertenecen a tu cuenta. No se mezclan entre usuarios.</p></div>`;
+    entryRoot.innerHTML = `<div class="re-shell">${head}${inside}
+      <p class="re-foot">Tus datos pertenecen a tu cuenta. No se mezclan entre usuarios.</p>
+      <div style="text-align:center;margin-top:12px"><button type="button" class="re-back"
+        onclick="window.REHelp?.open()" aria-label="Ayuda y soporte de Reformándome">¿Necesitas ayuda con tu cuenta?</button></div>
+      </div>`;
   }
   entryRender();
 
@@ -382,7 +393,13 @@
   }
   async function refreshUser(event, session) {
     const next = session?.user || null;
-    if (user?.id === next?.id && event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION') return;
+    if (user?.id === next?.id && event !== 'SIGNED_IN' && event !== 'INITIAL_SESSION') {
+      user = next; // USER_UPDATED: refrescar metadatos de nombre sin volver a cargar el progreso.
+      window.dispatchEvent(new CustomEvent('reformandome:account-updated', {
+        detail: { userId: user?.id || null }
+      }));
+      return;
+    }
     const request = ++entryRequest;
     user = next;
     conflict = false;
@@ -532,6 +549,10 @@
   }
 
   window.RECloud = {
+    // v35: API de solo lectura para módulos de soporte y nombre de personaje.
+    getClient: () => client,
+    getUser: () => user,
+    isReady: () => entry === 'ready',
     panel, foreign, foreignPanel, queue, submit, resetPassword, updatePassword,
     signOut, deleteCloud,
     upload: () => upload(),
