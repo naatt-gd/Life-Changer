@@ -6,7 +6,7 @@
  */
 (function () {
   let cfg = window.REFORMANDOME_CLOUD || {};
-  const APP_URL = 'https://naatt-gd.github.io/Life-Changer/';
+  const APP_URL = 'https://cynerax.com';
   const validConfig = c => /^https:\/\/[\w-]+\.supabase\.co\/?$/.test(String(c?.url || '')) &&
     /^(sb_publishable_|eyJ)/.test(String(c?.publishableKey || ''));
   let isConfigured = validConfig(cfg);
