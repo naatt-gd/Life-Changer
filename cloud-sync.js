@@ -12,6 +12,7 @@
   let isConfigured = validConfig(cfg);
 
   const LINK = 'reformandome_cloud_linked_uid';
+  const LOCAL_OWNER = 'reformandome_local_account_owner';
   const META = 'reformandome_cloud_last_sync_';
   const DIRTY = 'reformandome_cloud_dirty_';
   let client = null;
@@ -98,7 +99,7 @@
       border-radius:11px;padding:11px 16px;margin-top:10px}
     #re-entry .re-panel{max-width:510px;margin:auto}
     #re-entry label{display:block;color:#f6eaff;font-size:14px;font-weight:650;margin:18px 0 8px}
-    #re-entry input[type=email],#re-entry input[type=password]{width:100%;background:#171122;border:1px solid #6b587d;
+    #re-entry input[type=email],#re-entry input[type=password],#re-entry input[type=text],#re-entry input[type=date]{width:100%;background:#171122;border:1px solid #6b587d;
       border-radius:10px;padding:13px;color:#fff;font-size:16px;box-sizing:border-box}
     #re-entry .re-check{font-weight:400;font-size:13px;display:flex;align-items:flex-start;gap:10px;line-height:1.5}
     #re-entry .re-check input{width:20px;height:20px;flex-shrink:0;accent-color:#c7a7ff;margin-top:2px}
@@ -154,6 +155,13 @@
         <form id="re-auth-form" onsubmit="event.preventDefault();RECloud.submit()">
           <label for="re-email">Correo electrónico</label>
           <input id="re-email" type="email" autocomplete="email" maxlength="255" required placeholder="tu@correo.es">
+          ${register ? `<label for="re-username">Nombre de usuario (único)</label>
+          <input id="re-username" type="text" minlength="3" maxlength="20" pattern="[a-z0-9_]{3,20}"
+            autocapitalize="none" autocomplete="username" spellcheck="false" required placeholder="Ej.: aventurera_21">
+          <p class="re-note">Entre 3 y 20 caracteres: letras minúsculas, números y guion bajo.</p>
+          <label for="re-birth-date">Fecha de nacimiento</label>
+          <input id="re-birth-date" type="date" required autocomplete="bday">
+          <p class="re-note">Es privada. La utilizamos para personalizar tu experiencia y comprobar la edad mínima de registro.</p>` : ''}
           <label for="re-password">Contraseña ${register ? '(mínimo 8 caracteres)' : ''}</label>
           <input id="re-password" type="password" minlength="8" autocomplete="${register ? 'new-password' : 'current-password'}" required>
           <button class="re-action" type="submit">${register ? 'Crear mi cuenta' : 'Iniciar sesión'}</button>
@@ -204,6 +212,10 @@
   function form() {
     return `<label for="cloud-email">Correo electrónico</label>
       <input id="cloud-email" type="email" autocomplete="email" placeholder="tu@correo.es" maxlength="255">
+      ${authMode === 'signup' ? `<label for="cloud-username">Nombre de usuario</label>
+      <input id="cloud-username" type="text" minlength="3" maxlength="20" pattern="[a-z0-9_]{3,20}" required autocapitalize="none" autocomplete="username">
+      <label for="cloud-birth-date">Fecha de nacimiento</label>
+      <input id="cloud-birth-date" type="date" required autocomplete="bday">` : ''}
       <label for="cloud-password">${authMode === 'signup' ? 'Crear contraseña (mínimo 8 caracteres)' : 'Contraseña'}</label>
       <input id="cloud-password" type="password" minlength="8" autocomplete="${authMode === 'signup' ? 'new-password' : 'current-password'}">
       <button class="primary" type="button" onclick="RECloud.submit()">${authMode === 'signup' ? 'Crear mi cuenta' : 'Iniciar sesión'}</button>
@@ -211,7 +223,7 @@
       <button class="secondary" type="button" onclick="RECloud.resetPassword()">Recuperar contraseña</button>`;
   }
   function foreign() {
-    return Boolean(user && localStorage.getItem(LINK) && localStorage.getItem(LINK) !== user.id);
+    return Boolean(user && ([localStorage.getItem(LINK), localStorage.getItem(LOCAL_OWNER)].some(uid => uid && uid !== user.id)));
   }
   function foreignPanel() {
     return `<section class="card"><h2>Datos de otra cuenta en este dispositivo</h2>
@@ -244,8 +256,8 @@
       if (recovery) content += `<label for="cloud-newpass">Nueva contraseña</label>
         <input type="password" id="cloud-newpass" minlength="8" autocomplete="new-password">
         <button class="primary" onclick="RECloud.updatePassword()">Actualizar contraseña</button>`;
-      content += `<button class="secondary" type="button" onclick="RECloud.deleteCloud()">Eliminar mi copia de la nube</button>
-        <button class="secondary" type="button" onclick="RECloud.signOut()">Cerrar sesión y retirar datos locales vinculados</button>`;
+      content += `<button class="secondary" type="button" onclick="RECloud.signOutKeepLocal()">Cerrar sesión</button>
+        <button class="secondary" type="button" onclick="RECloud.manageData()">Borrar datos</button>`;
     }
     return `<section class="card"><h2>Cuenta y sincronización</h2>
       <p>Cuenta opcional. Sin conexión, puedes continuar guardando registros en este dispositivo; se enviarán cuando vuelvas a conectarte.</p>
@@ -439,12 +451,36 @@
   function startFresh() {
     if (!confirm('Se descartarán los datos locales de este dispositivo para empezar una aventura nueva. Los datos que tengas en la nube no se borrarán. ¿Continuar?')) return;
     localStorage.removeItem(KEY);
+    localStorage.removeItem(LOCAL_OWNER);
     location.reload();
   }
   function useOffline() {
     if (!localStorage.getItem(LINK)) return;
     // Nunca se usa este acceso si no hay una copia previamente vinculada.
     gate('ready');
+  }
+
+  function birthDateAllowed(raw) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return false;
+    const [year,month,day] = raw.split('-').map(Number);
+    const candidate = new Date(year, month - 1, day);
+    if (candidate.getFullYear()!==year || candidate.getMonth()!==month-1 || candidate.getDate()!==day || year < 1900) return false;
+    const limit = new Date();
+    limit.setFullYear(limit.getFullYear()-14);
+    limit.setHours(0,0,0,0);
+    return candidate.getTime() <= limit.getTime();
+  }
+  function setAuthFormError(message) {
+    entryError = message;
+    const formEl = document.getElementById('re-auth-form');
+    if (formEl) {
+      let n = document.getElementById('re-auth-inline-error');
+      if (!n) {
+        n = document.createElement('p'); n.id='re-auth-inline-error';n.className='re-alert';n.setAttribute('role','alert');
+        formEl.append(n);
+      }
+      n.textContent=message;
+    } else setStatus(message);
   }
 
   // CAMBIO PRINCIPAL: el correo de confirmación debe volver a la raíz REAL
@@ -454,16 +490,29 @@
     const email = (document.getElementById('re-email') || document.getElementById('cloud-email'))?.value.trim();
     const password = (document.getElementById('re-password') || document.getElementById('cloud-password'))?.value;
     if (!email || !password || password.length < 8) {
-      entryError = 'Indica correo y contraseña de al menos 8 caracteres.';
-      entryRender(); return setStatus(entryError);
+      return setAuthFormError('Indica correo y contraseña de al menos 8 caracteres.');
+    }
+    const username = authMode === 'signup'
+      ? (document.getElementById('re-username') || document.getElementById('cloud-username'))?.value.trim().toLowerCase() : '';
+    const birthDate = authMode === 'signup'
+      ? (document.getElementById('re-birth-date') || document.getElementById('cloud-birth-date'))?.value : '';
+    if (authMode === 'signup') {
+      if (!/^[a-z0-9_]{3,20}$/.test(username||''))
+        return setAuthFormError('El usuario debe tener entre 3 y 20 caracteres: letras minúsculas, números o _.');
+      if (!birthDateAllowed(birthDate||''))
+        return setAuthFormError('Introduce una fecha de nacimiento real. Por ahora, Reformándome admite registros a partir de 14 años.');
     }
     try {
       let result;
       if (authMode === 'signup') {
+        // Comprobación amistosa; la unicidad definitiva la garantiza PostgreSQL.
+        const available = await client.rpc('reformandome_username_available', { p_username: username });
+        if (available.error) throw new Error('No se pudo comprobar el nombre de usuario: '+available.error.message);
+        if (available.data === false) return setAuthFormError('Este nombre de usuario ya está en uso. Elige otro.');
         result = await client.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: APP_URL }
+          options: { emailRedirectTo: APP_URL, data: { username, birth_date: birthDate } }
         });
       } else {
         result = await client.auth.signInWithPassword({ email, password });
@@ -481,9 +530,7 @@
         if (data.session) await refreshUser('SIGNED_IN', data.session);
       }
     } catch (e) {
-      entryError = 'No se pudo acceder: ' + message(e);
-      entryRender();
-      setStatus(entryError);
+      setAuthFormError('No se pudo acceder: ' + message(e) + (authMode==='signup' ? ' Comprueba que el nombre esté libre o prueba otro.' : ''));
     }
   }
   async function resetPassword() {
@@ -525,28 +572,79 @@
       setStatus('No se han podido eliminar los datos: ' + message(e));
     }
   }
-  async function signOut() {
+  // Cerrar sesión nunca elimina el progreso local. Una marca de propietario
+  // impide que una cuenta distinta reutilice ese progreso sin permiso.
+  async function signOutKeepLocal() {
     if (!client || !user) return;
-    if (linked() && dirty())
-      return setStatus('Hay cambios sin sincronizar. Pulsa «Sincronizar ahora» y comprueba que termina antes de cerrar sesión.');
-    if (!confirm(linked()
-      ? 'Cerrar sesión eliminará de este dispositivo la copia vinculada a tu cuenta. La copia de la nube seguirá guardada. ¿Continuar?'
-      : '¿Cerrar la sesión de esta cuenta?')) return;
-    const oldId = user.id;
+    if (!confirm('¿Cerrar sesión? Tus datos guardados en este dispositivo y en Supabase se conservarán. No uses esta opción en un dispositivo compartido.')) return;
+    const oldId=user.id;
     try {
       const { error } = await client.auth.signOut();
       if (error) throw error;
-      if (localStorage.getItem(LINK) === oldId) {
-        localStorage.removeItem(KEY);
-        localStorage.removeItem(LINK);
-        localStorage.removeItem(META + oldId);
-        localStorage.removeItem(DIRTY + oldId);
-      }
+      localStorage.setItem(LOCAL_OWNER,oldId);
       location.reload();
     } catch (e) {
-      setStatus(message(e));
+      setStatus('No se pudo cerrar sesión: ' + message(e));
     }
   }
+
+  // El menú principal solo tiene dos botones. El borrado se elige aparte,
+  // nunca se ejecuta directamente al pulsar «Borrar datos».
+  function manageData() {
+    if (!client || !user) return;
+    const old = document.getElementById('re-delete-data-dialog');
+    if (old) old.remove();
+    const dialog=document.createElement('dialog');
+    dialog.id='re-delete-data-dialog';
+    dialog.setAttribute('aria-label','Elegir qué datos borrar');
+    dialog.style.cssText='max-width:min(480px,calc(100vw - 32px));background:#241a33;color:#faf2ff;border:1px solid #8667a8;border-radius:16px;padding:24px;box-shadow:0 22px 72px #0009';
+    dialog.innerHTML=`<form method="dialog" style="display:grid;gap:15px;font:inherit">
+      <h2 style="margin:0;font-size:22px">Borrar datos</h2>
+      <p style="margin:0;line-height:1.5">Elige qué copia quieres eliminar. <strong>Tu cuenta seguirá existiendo.</strong> Te recomendamos exportar una copia de seguridad antes.</p>
+      <label style="display:flex;gap:10px;align-items:flex-start"><input type="radio" name="re-data-scope" value="local" checked style="margin-top:5px"> <span><strong>Datos de este dispositivo</strong><br>Eliminará el progreso local y cerrará sesión, pero no borrará la copia de Supabase.</span></label>
+      <label style="display:flex;gap:10px;align-items:flex-start"><input type="radio" name="re-data-scope" value="cloud" style="margin-top:5px"> <span><strong>Copia de Supabase</strong><br>Eliminará el progreso sincronizado en la nube, pero no la cuenta ni sus datos de registro.</span></label>
+      <p style="font-size:13px;margin:0;color:#ddc9ea">La eliminación de una copia no borra automáticamente la otra.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button type="button" id="re-confirm-deletion" style="min-height:44px;padding:9px 15px;background:#9e698e;color:white;border:0;border-radius:9px">Continuar</button>
+        <button type="button" id="re-cancel-deletion" style="min-height:44px;padding:9px 15px;background:#463553;color:white;border:1px solid #a38ab2;border-radius:9px">Cancelar</button>
+      </div></form>`;
+    document.body.append(dialog);
+    dialog.querySelector('#re-cancel-deletion').onclick=()=>dialog.close();
+    dialog.querySelector('#re-confirm-deletion').onclick=async()=>{
+      const scope=dialog.querySelector('input[name="re-data-scope"]:checked')?.value;
+      dialog.close();
+      if (scope==='cloud') return deleteCloud();
+      if (scope==='local') return deleteLocalData();
+    };
+    dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+    dialog.showModal();
+  }
+
+  async function deleteLocalData() {
+    if (!client || !user) return;
+    const oldId=user.id;
+    const warning= linked() && dirty()
+      ? 'ATENCIÓN: hay cambios locales sin sincronizar que podrías perder definitivamente. Exporta una copia JSON antes de seguir. ¿Borrar los datos locales y cerrar sesión?'
+      : 'Se borrará el progreso guardado en este dispositivo y se cerrará sesión. La copia que tengas en Supabase no se modificará. ¿Continuar?';
+    if (!confirm(warning)) return;
+    try {
+      const {error}=await client.auth.signOut();
+      if(error)throw error;
+      // Solo se borran las claves conocidas de datos de la aplicación.
+      // No tocamos otras apps, cookies, historial ni copia remota.
+      localStorage.removeItem(KEY);
+      localStorage.removeItem(LINK);
+      localStorage.removeItem(LOCAL_OWNER);
+      localStorage.removeItem(META+oldId);
+      localStorage.removeItem(DIRTY+oldId);
+      location.reload();
+    } catch(e) {
+      setStatus('No se pudieron borrar los datos locales: '+message(e));
+    }
+  }
+
+  // Alias para antiguas referencias; sin borrado implícito.
+  async function signOut(){return signOutKeepLocal();}
 
   window.RECloud = {
     // v35: API de solo lectura para módulos de soporte y nombre de personaje.
@@ -554,7 +652,7 @@
     getUser: () => user,
     isReady: () => entry === 'ready',
     panel, foreign, foreignPanel, queue, submit, resetPassword, updatePassword,
-    signOut, deleteCloud,
+    signOut, signOutKeepLocal, deleteCloud, manageData,
     upload: () => upload(),
     download: () => loadCloud({ interactive: true }),
     clearPrevious() {
@@ -562,6 +660,7 @@
       if (!confirm('Se eliminarán los datos locales de la cuenta anterior. Exporta una copia JSON antes si tienes cambios pendientes. La copia de la nube de esa cuenta no se modificará.\n¿Continuar?')) return;
       localStorage.removeItem(KEY);
       localStorage.removeItem(LINK);
+      localStorage.removeItem(LOCAL_OWNER);
       location.reload();
     },
     home() {entryError = ''; gate('welcome');},

@@ -253,6 +253,11 @@
     if(!u || !linked() || !window.RECloud?.isReady?.() || lastPromptedUser===u.id)return;
     pendingProfilePrompt=true;
     try {
+      // Primero se completa el usuario y la fecha de nacimiento (v35.3).
+      if (window.REIdentity?.ensureComplete) {
+        const complete=await window.REIdentity.ensureComplete();
+        if (!complete) return;
+      }
       const c=client();if(!c)return;
       const {data,error}=await c.auth.getUser();
       if(error || !data?.user || data.user.id!==u.id)return;
@@ -269,7 +274,7 @@
     finally{pendingProfilePrompt=false;}
   }
 
-  window.REHelp={open,close,openName,saveName};
+  window.REHelp={open,close,openName,saveName,checkNamePrompt:afterAccountReady};
   window.addEventListener('reformandome:account-state', e => {
     if(e.detail?.state==='ready')afterAccountReady();
     if(e.detail?.state==='welcome')lastPromptedUser=null;
