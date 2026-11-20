@@ -1,7 +1,8 @@
 {
-  "name": "Reformándome · 66 días",
-  "short_name": "Reformándome",
-  "start_url": "./",
+"name": "Reformándome · Reto de 66 días",
+"short_name": "Reformándome",
+"start_url": "/",
+"scope": "/",
   "display": "standalone",
   "background_color": "#100e18",
   "theme_color": "#171326",
