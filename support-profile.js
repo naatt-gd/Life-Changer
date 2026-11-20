@@ -208,7 +208,7 @@
       <p>${firstTime?'Elige cómo te llamaremos durante tu aventura. Puedes cambiarlo después desde Mi perfil.':'Este nombre identificará a tu personaje y podrá aparecer en los correos de tu cuenta.'}</p>
       <form id="re-name-form"><label for="re-name">Nombre del personaje</label>
         <input id="re-name" type="text" minlength="2" maxlength="20" required autocomplete="nickname"
-          value="${safe(current)}" placeholder="Ej.: Natháelia">
+          value="${safe(current)}" placeholder="Ej.: Aelira">
         <p class="rehelp-faint">Entre 2 y 20 caracteres. Evita compartir apellidos, teléfono u otros datos personales.</p>
         <p id="rehelp-message" class="rehelp-status" hidden></p>
         <div class="rehelp-actions"><button class="rehelp-main" id="re-name-save" type="submit">Guardar nombre</button>
