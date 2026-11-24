@@ -10,7 +10,7 @@
     console.error('RE36: falta app.js o los módulos anteriores.');
     return;
   }
-  const VERSION = '36.1';
+  const VERSION = '36.2';
   const xss = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
   const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
   const iso = dt => { const d0 = new Date(dt); return [d0.getFullYear(),String(d0.getMonth()+1).padStart(2,'0'),String(d0.getDate()).padStart(2,'0')].join('-'); };
@@ -97,9 +97,9 @@
   function habitsHTML(){
     const s=data();if(!s)return '';
     const key=today();return `<section class="card re36-card" id="re36-habits"><h2>✅ Seguimiento de hábitos</h2>
-      <p>Las rachas aumentan los XP hasta +10 por día. Si pasa un día sin completar un hábito, la siguiente recompensa vuelve a la base. Un día de descanso nunca resta XP.</p>
+      <details class="re36-help"><summary>Cómo funcionan las rachas</summary><p>+2 XP por cada día consecutivo, hasta +10 XP adicionales. Si se interrumpe la racha, la siguiente recompensa vuelve a la base.</p></details>
       ${s.habits.filter(h=>h.active).map(h=>{
-        const record=s.checks[key]?.[h.id],st=currentStreak(h.id),next=Number(h.base)+dailyBonus(st+1);
+        const record=s.checks[key]?.[h.id],st=currentStreak(h.id),next=Number(h.base)+dailyBonus(streakAt(h.id,shiftDate(key,-1))+1);
         return `<div class="re36-habit"><button type="button" class="${record?'primary':'secondary'}" onclick="RE36.toggleHabit('${h.id}')" aria-pressed="${!!record}">${record?'✓ Hecho':'Marcar'}</button><span class="re36-flex"><strong>${xss(h.name)}</strong><small>${st?'🔥 '+st+' días de racha · ':''}${record?'+'+record.xp+' XP hoy':'Hoy: '+next+' XP'}</small></span><button class="secondary" type="button" onclick="RE36.editHabit('${h.id}')" aria-label="Editar ${xss(h.name)}">✎</button><button class="secondary" type="button" onclick="RE36.archiveHabit('${h.id}')" aria-label="Archivar ${xss(h.name)}">×</button></div>`;
       }).join('')}
       <button class="secondary" onclick="RE36.editHabit('new')">+ Añadir hábito</button>
@@ -1773,9 +1773,10 @@
   }
   function menuGo(offset){
     if(!Number.isInteger(offset)||Math.abs(offset)>7)return;
-    selectedMenuDate=shiftDate(selectedMenuDate,offset);open('menu');
+    selectedMenuDate=shiftDate(selectedMenuDate,offset);refreshMenu();
   }
-  function menuToday(){selectedMenuDate=today();open('menu');}
+  function refreshMenu(){if(typeof nutritionDate!=='undefined')nutritionDate=selectedMenuDate;if(typeof nutritionFollowToday!=='undefined')nutritionFollowToday=selectedMenuDate===today();if(dialog?.open)open('menu');else render();}
+  function menuToday(){selectedMenuDate=today();refreshMenu();}
   function addExclusion(){
     const s=data();if(!s)return;
     const raw=prompt('Ingredientes a evitar, separados por comas (ej.: leche, setas, tomate)',s.exclusions.join(', '));
@@ -1796,16 +1797,14 @@
   function dayMenuHTML(date){
     const mode=strengthDay(date);
     const labels={fuerza:'💪 Entrenamiento de fuerza',actividad:'🚶 Actividad ligera',descanso:'🌿 Descanso y recuperación',desconocido:'🍽️ Día equilibrado'};
-    const note=mode==='fuerza'?'Sugerencias con proteínas e hidratos habituales para acompañar la actividad. Elige las raciones que necesites.':
-      mode==='descanso'?'Comidas variadas también en días de descanso. No hace falta saltarse comidas ni quitar hidratos.':
-      'Propuestas variadas que puedes intercambiar. Las preferencias y alergias deben revisarse siempre por separado.';
-    return `<p><strong>${labels[mode]}</strong> · ${xss(date)}.</p><p class="small">${note}</p>${slots.map(([slot,label])=>{
+    return `<p class="re36-date"><strong>${labels[mode]}</strong> · ${xss(atDay(date).toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'}))}</p>${slots.map(([slot,label])=>{
       const r=mealFor(date,slot);const options=MEAL_OPTIONS[slot].filter(isAllowed);
       const ident=`re36_${slot}`;
       return `<div class="re36-meal"><label for="${ident}">${label}</label>${r?`<select id="${ident}" onchange="RE36.mealChange('${date}','${slot}',this.value)">${options.map(o=>`<option value="${o.id}" ${r.id===o.id?'selected':''}>${xss(o.name)}</option>`).join('')}</select>
-        ${recipeDetails(r)}`:'<p>No hay opciones compatibles con tus ingredientes excluidos. Revisa las preferencias.</p>'}</div>`;
+        ${recipeDetails(r)}${typeof page!=='undefined'&&page==='Nutrición'&&!dialog?.open?`<button type="button" class="secondary" onclick="RE36.logMeal('${slot}')">Añadir al registro</button>`:''}`:'<p>No hay opciones compatibles con tus ingredientes excluidos. Revisa las preferencias.</p>'}</div>`;
     }).join('')}`;
   }
+  function logMeal(slot){const recipe=mealFor(selectedMenuDate,slot),label=slots.find(([id])=>id===slot)?.[1];if(!recipe||!label||typeof setSuggestedMeal!=='function')return;setSuggestedMeal(recipe.name,label);}
   function groceryHTML(){
     const list=new Map();
     for(let i=0;i<7;i++){
@@ -1826,26 +1825,26 @@
     const s=data();if(!s)return '';
     const date=selectedMenuDate;
     return `<section class="card re36-card" id="re36-menu"><h2>🍽️ Menú adaptable al entrenamiento</h2>
-      <p>Recetario ampliado con ${allRecipes().length} platos y cinco comidas diferenciadas. Cada plato incluye ingredientes, preparación y tiempo estimado.</p>
+      <p class="small">${allRecipes().length} platos · 5 comidas al día</p>
       <div class="re36-row"><button type="button" class="secondary" onclick="RE36.menuGo(-1)">← Día anterior</button><button type="button" class="secondary" onclick="RE36.menuToday()">Hoy</button><button type="button" class="secondary" onclick="RE36.menuGo(1)">Día siguiente →</button></div>
       ${dayMenuHTML(date)}
       <button type="button" class="secondary" onclick="RE36.addExclusion()">Editar ingredientes a evitar (${s.exclusions.length})</button>
       ${groceryHTML()}
       <p class="small">Las propuestas no sustituyen una valoración nutricional individual. Verifica ingredientes, alérgenos y tolerancias. Un día de descanso también necesita alimentación suficiente.</p></section>`;
   }
-    function xpHTML(){const a=level();return `<section class="card re36-card"><h2>✨ Tu experiencia</h2><p><strong>Nivel ${a.level}</strong> · <strong>${a.part}/${a.next} XP</strong> para el siguiente nivel</p>${bar(a.part,a.next)}<p class="small">Te faltan ${a.left} XP · Total acumulado: ${a.total}. Cada nivel de esta barra representa 100 XP.</p><button class="secondary" onclick="RE36.open('habitos')">Ver hábitos y rachas</button></section>`;}
+    function xpHTML(){const a=level();return `<section class="card re36-card"><h2>✨ Tu experiencia</h2><p><strong>Nivel ${a.level}</strong> · <strong>${a.part}/${a.next} XP</strong> para el siguiente nivel</p>${bar(a.part,a.next)}<p class="small">Te faltan ${a.left} XP · Total acumulado: ${a.total}. </p></section>`;}
   function storyHTML(){const s=data();if(!s)return '';
     const start=/^\d{4}-\d{2}-\d{2}$/.test(String(d.start||''))?d.start:today();const elapsed=clamp(Math.floor((atDay(today())-atDay(start))/(24*3600*1000))+1,1,66);
     const chapters=['El despertar','El bosque del cambio','La senda de la constancia','La fortaleza del equilibrio','La cumbre interior','El nuevo horizonte'];
-    return `<section class="card re36-card"><h2>🗺️ Tu aventura de 66 días</h2><p>Capítulo ${Math.ceil(elapsed/11)} · ${xss(chapters[Math.floor((elapsed-1)/11)])}. Tus días avanzan aunque descanses: aquí no hay castigos por cuidarte.</p>
+    return `<section class="card re36-card"><h2>🗺️ Tu aventura de 66 días</h2><p>Capítulo ${Math.ceil(elapsed/11)} · ${xss(chapters[Math.floor((elapsed-1)/11)])}</p>
       <div class="re36-map" aria-label="Mapa de 66 días">${Array.from({length:66},(_,i)=>{const day=i+1;const date=shiftDate(start,i);const done=!!s.dayDone[date];return `<span class="re36-step ${done?'done':day===elapsed?'current':''}" title="Día ${day} · ${date}" aria-label="Día ${day}${done?', misión cerrada':''}">${day}</span>`;}).join('')}</div>
-      <p>Hoy: día ${elapsed}/66. Completar una etapa es opcional y no exige actividad física.</p>
+      <p>Día ${elapsed} de 66</p>
       <div class="re36-row"><button class="${s.dayDone[today()]?'secondary':'primary'}" onclick="RE36.finishDay()">${s.dayDone[today()]?'✓ Etapa de hoy completada':'Cerrar la etapa de hoy · +5 XP'}</button>
-      <button class="secondary" onclick="RE36.open('recompensas')">Ver recompensas</button></div></section>`;
+      </div></section>`;
   }
   function finishDay(){const s=data();if(!s)return;const k=today();if(s.dayDone[k])return;
     s.dayDone[k]={xp:5,at:new Date().toISOString()};d.xp=xp()+5;unlocks();commit('Etapa completada · +5 XP.');}
-  function dayModeHTML(){const s=data();const mode=s.dailyMode[today()]||'normal';return `<section class="card re36-card"><h2>🌿 Elige tu ritmo de hoy</h2><div class="re36-row">${[['normal','Día completo'],['ligero','Día ligero'],['descanso','Descanso']].map(([v,n])=>`<button class="${mode===v?'primary':'secondary'}" onclick="RE36.setMode('${v}')">${n}</button>`).join('')}</div><p class="small">${mode==='descanso'?'Hoy la prioridad es recuperar energía. El descanso no rompe la aventura.':mode==='ligero'?'Haz solo lo esencial; una pequeña acción ya cuenta.':'Plan normal, siempre adaptable a cómo te encuentres.'}</p></section>`;}
+  function dayModeHTML(){const s=data();const mode=s.dailyMode[today()]||'normal';return `<section class="card re36-card"><h2>🌿 Elige tu ritmo de hoy</h2><div class="re36-row">${[['normal','Día completo'],['ligero','Día ligero'],['descanso','Descanso']].map(([v,n])=>`<button class="${mode===v?'primary':'secondary'}" onclick="RE36.setMode('${v}')">${n}</button>`).join('')}</div></section>`;}
   function setMode(mode){const s=data();if(!s||!['normal','ligero','descanso'].includes(mode))return;s.dailyMode[today()]=mode;commit('Ritmo del día actualizado.');}
   const ITEMS=[
     {id:'capa',name:'Capa del comienzo',cost:20,mark:'🧥'},
@@ -1854,21 +1853,21 @@
     {id:'alas',name:'Emblema de alas de luz',cost:60,mark:'🪽'},
     {id:'dragon',name:'Insignia del dragón',cost:80,mark:'🐉'}
   ];
-  function shopHTML(){const s=data();return `<section class="card re36-card"><h2>🎒 Inventario y recompensas</h2><p>Monedas gratuitas: <strong>${s.coins}</strong>. Se ganan con logros; no hay compras con dinero real.</p>
+  function shopHTML(){const s=data();return `<section class="card re36-card"><h2>🎒 Inventario y recompensas</h2><p>Saldo: <strong>${s.coins} monedas</strong></p>
     ${ITEMS.map(x=>`<div class="re36-row re36-shop"><span>${x.mark} <strong>${xss(x.name)}</strong></span><button class="secondary" type="button" onclick="RE36.buy('${x.id}')" ${s.items.includes(x.id)||s.coins<x.cost?'disabled':''}>${s.items.includes(x.id)?'Conseguido':x.cost+' monedas'}</button></div>`).join('')}
-    <p class="small">Los objetos se guardan en el inventario. Esta actualización no cambia todavía el dibujo principal del avatar.</p></section>`;}
+    <details class="re36-help"><summary>Sobre las recompensas</summary><p>Son objetos coleccionables del inventario; no son prendas equipables.</p></details></section>`;}
   function buy(id){const s=data();const it=ITEMS.find(x=>x.id===id);if(!s||!it||s.items.includes(id)||s.coins<it.cost)return;
     s.coins-=it.cost;s.items.push(id);commit('Recompensa desbloqueada.');}
   function achievementsHTML(){const s=data(),names={primera_mision:'Primer hábito',diez_habitos:'10 hábitos',cincuenta_habitos:'50 hábitos',semana_constante:'Una semana seguida',capitulo_uno:'Primer capítulo terminado'};
     return `<section class="card re36-card"><h2>🏅 Logros</h2>${Object.entries(names).map(([id,label])=>`<p>${s.achievements[id]?'🏆':'🔒'} ${xss(label)} ${s.achievements[id]?'· '+s.achievements[id]:''}</p>`).join('')}</section>`;}
   function journalHTML(){const s=data(),key=today(),v=s.journal[key]||{};return `<section class="card re36-card"><h2>📖 Diario de la aventura</h2><label for="re36_mood">¿Cómo ha ido el día?</label><select id="re36_mood">${[['','Sin valorar'],['muybien','Muy bien'],['bien','Bien'],['normal','Normal'],['cansada','Con poca energía'],['dificil','Difícil']].map(([id,label])=>`<option value="${id}" ${v.mood===id?'selected':''}>${label}</option>`).join('')}</select>
     <label for="re36_note">Notas privadas (máximo 1000 caracteres)</label><textarea id="re36_note" maxlength="1000" rows="3">${xss(v.note||'')}</textarea>
-    <button class="primary" onclick="RE36.saveJournal()">Guardar diario</button><p class="small">El diario forma parte de tu copia personal de progreso; no se comparte en los retos.</p>
+    <button class="primary" onclick="RE36.saveJournal()">Guardar diario</button>
     <details><summary>Entradas anteriores</summary>${Object.entries(s.journal).filter(([date])=>date!==key).sort(([a],[b])=>b.localeCompare(a)).slice(0,20).map(([date,e])=>`<p><strong>${xss(date)}</strong> · ${xss(e.mood||'Sin valorar')}<br>${xss(e.note||'')}</p>`).join('')||'<p>Aún no hay entradas anteriores.</p>'}</details></section>`;}
   function saveJournal(){const s=data();const mood=document.getElementById('re36_mood')?.value||'';const note=document.getElementById('re36_note')?.value.slice(0,1000)||'';
     if(!s)return;s.journal[today()]={mood,note,updated:new Date().toISOString()};commit('Diario guardado.');}
   function workoutHTML(){const s=data(),k=today(),row=s.workouts[k]||{};const plan=strengthDay(k);
-    return `<section class="card re36-card"><h2>🏋️ Registro de entrenamiento</h2><p>Plan de hoy: <strong>${xss(plan)}</strong>. Registra una sesión para revisar tus progresos; no añade XP extra al entrenamiento ya marcado.</p>
+    return `<section class="card re36-card"><h2>🏋️ Registro de entrenamiento</h2><p>Plan de hoy: <strong>${xss(({fuerza:'Fuerza',actividad:'Actividad ligera',descanso:'Descanso',desconocido:'Sin plan'})[plan])}</strong>.</p>
     <label for="re36_sets">Series realizadas</label><input id="re36_sets" type="number" min="0" max="40" value="${Number(row.sets)||0}">
     <label for="re36_reps">Repeticiones por serie (aproximadas)</label><input id="re36_reps" type="number" min="0" max="100" value="${Number(row.reps)||0}">
     <label for="re36_load">Carga utilizada, kg (opcional)</label><input id="re36_load" type="number" min="0" max="400" step="0.5" value="${Number(row.kg)||0}">
@@ -1884,7 +1883,7 @@
     const moods={};for(const k of days){const m=s.journal[k]?.mood;if(m)moods[m]=(moods[m]||0)+1;}
     return `<section class="card re36-card"><h2>📊 Tu progreso de 28 días</h2><div class="re36-stats"><div><strong>${total}</strong><small>Hábitos completados</small></div><div><strong>${daysDone}/28</strong><small>Días con hábitos</small></div><div><strong>${trained}</strong><small>Entrenamientos marcados</small></div></div>
       <p>Estado de ánimo: ${Object.entries(moods).map(([k,n])=>xss(k)+': '+n).join(' · ')||'Sin registros'}</p>
-      <p class="small">Estos indicadores muestran actividad y constancia, sin juzgar el peso ni penalizar los descansos.</p></section>`;}
+      </section>`;}
   function reminderHTML(){const s=data();const set=s.reminders;return `<section class="card re36-card"><h2>🔔 Recordatorios opcionales</h2><p>Funcionan mientras Reformándome esté abierta. No son notificaciones push en segundo plano.</p>
     <label for="re36_remind_time">Hora del recordatorio diario</label><input id="re36_remind_time" type="time" value="${xss(set.time||'19:00')}">
     <label><input type="checkbox" id="re36_remind_enabled" ${set.enabled?'checked':''}> Activar</label>
@@ -1904,10 +1903,10 @@
   function themesHTML(){const theme=data()?.theme||'violet';return `<section class="card re36-card"><h2>🎨 Aspecto</h2><div class="re36-row">${[['violet','Violeta'],['forest','Bosque'],['contrast','Alto contraste']].map(([v,n])=>`<button class="${theme===v?'primary':'secondary'}" onclick="RE36.setTheme('${v}')">${n}</button>`).join('')}</div></section>`;}
   function applyTheme(){const s=data();if(!s)return;document.documentElement.dataset.re36theme=s.theme;}
   function setTheme(t){if(!['violet','forest','contrast'].includes(t))return;data().theme=t;applyTheme();commit('Tema actualizado.');}
-  function questsHTML(){const s=data();return `<section class="card re36-card"><h2>🎯 Retos personalizados</h2><p>Crea pequeños retos individuales; puedes completarlos a tu ritmo.</p>
+  function questsHTML(){const s=data();return `<section class="card re36-card"><h2>🎯 Retos personalizados</h2>
     ${s.customChallenges.map(ch=>`<div class="re36-habit"><span class="re36-flex"><strong>${xss(ch.title)}</strong><small>${ch.done?'Completado':'Pendiente'} · +${ch.xp} XP</small></span><button class="secondary" ${ch.done?'disabled':''} onclick="RE36.completeChallenge('${ch.id}')">${ch.done?'✓':'Completar'}</button></div>`).join('')}
     <button class="secondary" onclick="RE36.addChallenge()">+ Nuevo reto personal</button>
-    <p class="small">Para retos compartidos y gremios, usa el apartado de amigos; requiere instalar el SQL social incluido.</p></section>`;}
+    </section>`;}
   function addChallenge(){const s=data();if(!s)return;const name=prompt('Título del reto personal (máximo 65 caracteres)');if(name===null)return;
     if(!name.trim()||name.length>65)return alert('Escribe un título válido.');
     if(s.customChallenges.length>=50)return alert('Máximo 50 retos; termina algunos antes de añadir más.');
@@ -1915,8 +1914,8 @@
   function completeChallenge(id){const s=data();const ch=s?.customChallenges.find(x=>x.id===id&&!x.done);if(!ch)return;
     ch.done=true;ch.completed=today();d.xp=xp()+ch.xp;commit('Reto completado · +'+ch.xp+' XP.');}
   function achievementsAndSocial(){return `<section class="card re36-card"><h2>🤝 Retos con amigos y gremios</h2>
-    ${window.RE36Social?.card?.()||'<p>Para crear retos privados entre cuentas, ejecuta el SQL de la carpeta 02_Supabase y añade el módulo social de esta versión.</p>'}
-    <p class="small">El registro de pasos es manual: una PWA web no puede acceder directamente a Apple Salud como una app nativa.</p></section>`;}
+    ${window.RE36Social?.card?.()||'<p>Los retos compartidos no están disponibles en este momento.</p>'}
+    <p class="small">Introduce tus pasos manualmente.</p></section>`;}
   function hub(sections=['inicio','habitos','menu','recompensas','diario','retos','social','ajustes']){
     const blocks={inicio:()=>xpHTML()+dayModeHTML()+storyHTML()+reportHTML(),habitos:habitsHTML,menu:menuHTML,recompensas:()=>shopHTML()+achievementsHTML(),diario:()=>journalHTML()+workoutHTML(),retos:questsHTML,social:achievementsAndSocial,ajustes:()=>reminderHTML()+themesHTML()};
     return sections.map(n=>blocks[n]?.()||'').join('');
@@ -1925,16 +1924,21 @@
   function open(section='inicio'){
     if(!data())return alert('Accede a tu cuenta antes de abrir la aventura.');
     if(!dialog){dialog=document.createElement('dialog');dialog.className='re36-dialog';dialog.setAttribute('aria-label','Aventura de Reformándome');document.body.append(dialog);}
-    const tabs=[['inicio','Mi aventura'],['habitos','Hábitos'],['menu','Nutrición'],['recompensas','Recompensas'],['diario','Diario'],['retos','Mis retos'],['social','Amigos'],['ajustes','Opciones']];
+    const tabs=[['inicio','Aventura'],['habitos','Hábitos'],['menu','Nutrición'],['retos','Mis retos'],['social','Amigos'],['recompensas','Logros'],['diario','Diario'],['ajustes','Opciones']];
     if(!tabs.some(x=>x[0]===section))section='inicio';
     activeSection=section;
-    dialog.innerHTML=`<div class="re36-inner"><div class="re36-dialog-header"><h2>✦ Reformándome · Mi aventura</h2><button class="secondary" onclick="RE36.close()" aria-label="Cerrar">✕</button></div>
-      <nav class="re36-tabs" aria-label="Secciones de la aventura">${tabs.map(([id,label])=>`<button class="${id===section?'primary':'secondary'}" onclick="RE36.open('${id}')">${label}</button>`).join('')}</nav>
+    dialog.innerHTML=`<div class="re36-inner"><div class="re36-dialog-header"><h2>✦ Mi aventura</h2><button class="secondary" onclick="RE36.close()" aria-label="Cerrar">✕</button></div>
+      <nav class="re36-tabs" aria-label="Secciones de la aventura">${tabs.map(([id,label])=>`<button class="${id===section?'primary':'secondary'}" aria-current="${id===section?'page':'false'}" onclick="RE36.open('${id}')">${label}</button>`).join('')}</nav>
       ${hub([section])}</div>`;
-    if(!dialog.open)dialog.showModal();dialog.scrollTop=0;
+    if(!dialog.open)dialog.showModal();dialog.scrollTop=0;const inner=dialog.querySelector?.('.re36-inner');if(inner)inner.scrollTop=0;
   }
   function close(){if(dialog?.open)dialog.close();}
   const css=document.createElement('style');css.textContent=`
+    .re36-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.re36-grid button{min-width:0;margin:0;white-space:normal}
+    .re36-fold,.re36-help,.re36-grocery{border:1px solid #655273;border-radius:12px;padding:12px;margin:12px 0;background:rgba(80,54,105,.12)}
+    .re36-fold>summary,.re36-help>summary,.re36-grocery>summary{cursor:pointer;font-weight:650;line-height:1.4}.re36-fold>summary{padding:5px 0}.re36-date{text-transform:none}
+    .re36-habit .re36-flex{overflow-wrap:anywhere}.re36-dialog .re36-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:visible;gap:6px}.re36-dialog .re36-tabs button{min-width:0;white-space:normal;padding:8px 4px;margin:0;font-size:12px}
+    .re36-dialog .re36-card{margin-top:10px}.re36-card h2{font-size:1.15rem}.re36-dialog-header{position:sticky;top:0;background:#1d1729;z-index:2;padding:4px 0}
     .re36-card{margin-top:17px}.re36-card h2{margin-bottom:10px}.re36-card .small{line-height:1.5}
     .re36-meter{height:12px;background:#423452;border-radius:100px;overflow:hidden;margin:12px 0}
     .re36-meter i{display:block;height:100%;background:linear-gradient(90deg,#b994ed,#d6c5ff);border-radius:100px}
@@ -1958,22 +1962,36 @@
     html[data-re36theme="forest"] .re36-card,html[data-re36theme="forest"] .re36-dialog{border-color:#6a9578!important;background:#193329!important}
     html[data-re36theme="contrast"] .re36-card,html[data-re36theme="contrast"] .re36-dialog{background:#0b0b0e!important;border:2px solid #fff!important;color:#fff!important}
     html[data-re36theme="contrast"] .re36-dialog button{outline:1px solid #fff}
-    @media(max-width:480px){.re36-map{grid-template-columns:repeat(6,minmax(0,1fr))}.re36-stats{grid-template-columns:1fr 1fr}.re36-inner{padding:12px}}
+    @media(max-width:480px){.re36-dialog .re36-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.re36-habit{gap:5px}.re36-habit button{padding:7px 8px}.re36-map{grid-template-columns:repeat(6,minmax(0,1fr))}.re36-stats{grid-template-columns:1fr 1fr}.re36-inner{padding:12px}}
   `;document.head.append(css);
   // Enlazamos secciones existentes sin reemplazar el resto del sistema.
+  const fold=(title,html)=>`<details class="re36-fold"><summary>${title}</summary>${html}</details>`;
   const oldSettings=settings;
-  settings=function(){const base=oldSettings();return base+`<section class="card re36-card"><h2>✦ Aventura ampliada</h2><p>Mapa de 66 días, rachas, XP, retos, inventario y seguimiento.</p><button class="primary" onclick="RE36.open('inicio')">Abrir mi aventura</button></section>`;};
+  settings=function(){return oldSettings()+reminderHTML()+themesHTML();};
   if(typeof profile==='function'){
     const oldProfile=profile;
-    profile=function(){return oldProfile()+xpHTML()+`<section class="card"><button class="primary" onclick="RE36.open('recompensas')">Mis logros y recompensas</button></section>`;};
+    profile=function(){return xpHTML()+oldProfile()+fold('Logros e inventario',achievementsHTML()+shopHTML());};
   }
   if(typeof progress==='function'){
     const oldProgress=progress;
-    progress=function(){return oldProgress()+xpHTML()+reportHTML()+habitsHTML();};
+    progress=function(){return reportHTML()+oldProgress().replace('Inspirada en los diarios de progreso: valora sensaciones y constancia, no solo el peso. ', '')+fold('Historial de hábitos',historyHTML(28))+fold('Diario personal',journalHTML());};
   }
   if(typeof home==='function'){
     const oldHome=home;
-    home=function(){return oldHome()+xpHTML()+dayModeHTML()+`<section class="card"><button class="primary" onclick="RE36.open('inicio')">Ver mapa y misiones</button></section>`;};
+    home=function(){
+      let base=oldHome();
+      base=base.replace(/<div class="stat"><b>[^<]*<\/b>XP acumulados<\/div>/,'').replace(/<div class="stat"><b>[^<]*<\/b>Nivel de heroína<\/div>/,'');
+      // Replace only the summary of the old menu, leaving its original controls intact.
+      if(typeof esc==='function' && typeof menuFor==='function'){
+        const summary=slots.map(([slot,label])=>`<p><strong>${xss(label)}:</strong> ${xss(mealFor(today(),slot)?.name||'Sin sugerencia')}</p>`).join('');
+        base=base.replace(/(<h3>Comidas previstas<\/h3>)[\s\S]*?(?=<button class="primary" onclick="nutritionDate=)/,(_,h)=>h+summary);
+      }
+      return xpHTML()+dayModeHTML()+`<section class="card re36-card re36-shortcuts"><h2>Mi aventura</h2><div class="re36-grid"><button class="secondary" onclick="go('Misiones')">✓ Hábitos</button><button class="secondary" onclick="RE36.open('inicio')">🗺️ Mapa de 66 días</button><button class="secondary" onclick="RE36.open('retos')">🎯 Mis retos</button><button class="secondary" onclick="RE36.open('social')">🤝 Amigos</button></div></section>`+base;
+    };
+  }
+  if(typeof missions==='function'){
+    const oldMissions=missions;
+    missions=function(){return habitsHTML()+fold('Misiones habituales',oldMissions())+`<section class="card re36-card"><h2>Retos</h2><div class="re36-grid"><button class="secondary" onclick="RE36.open('retos')">Mis retos</button><button class="secondary" onclick="RE36.open('social')">Con amigos</button></div></section>`;};
   }
   // Los turnos/precauciones existentes tienen prioridad. El modo elegido solo
   // suaviza o convierte en descanso sesiones de fuerza; nunca fuerza ejercicio.
@@ -1994,18 +2012,30 @@
   }
   const oldNutrition=nutrition;
   nutrition=function(){
-    let base=String(oldNutrition());
-    // El término no claro se sustituye por un desayuno familiar; la compra heredada
-    // permanece como referencia hasta integrar su fuente original.
-    // Conserva el menú original y aclara el término sin sustituir sus recetas.
-    base=base.replace(/avena nocturna/gi,'Avena nocturna (se prepara la noche anterior)');
-    return menuHTML()+`<details class="re36-legacy"><summary>Ver menú y lista de compra anteriores</summary><p class="small"><strong>Avena nocturna:</strong> se mezclan 50 g de copos de avena con 150 ml de bebida vegetal por la noche, se deja tapada en la nevera al menos 6-8 horas y por la mañana se añade fruta. Nunca se deja fuera de la nevera toda la noche.</p>${base}</details>`;
+    if(typeof nutritionDate!=='undefined')selectedMenuDate=nutritionDate;
+    let base=String(oldNutrition()).replace(/avena nocturna/gi,'Avena nocturna (se prepara la noche anterior)');
+    base=base.replace(/<p class="small">Contenido original de educación alimentaria[^<]*<\/p>/g,'');
+    // Separate old menu and shopping from the food and water logs; keep all original actions.
+    const startLog=base.indexOf('<section class="card"><h2>Registrar comidas</h2>');
+    if(startLog>=0){const older=base.slice(0,startLog),logs=base.slice(startLog);return menuHTML()+logs+fold('Menú alternativo y compra personalizada',older);}
+    return menuHTML()+fold('Registro de comidas y menú alternativo',base);
   };
   if(typeof training==='function'){
     const oldTraining=training;
-    training=function(){return oldTraining()+`<section class="card"><h2>📒 Registro de tu sesión</h2><button class="secondary" onclick="RE36.open('diario')">Registrar series, peso y esfuerzo</button></section>`;};
+    training=function(){return oldTraining()+fold('Registrar mi sesión',workoutHTML());};
   }
-  window.RE36={VERSION,open,close,toggleHabit,editHabit,archiveHabit,mealChange,menuGo,menuToday,addExclusion,finishDay,setMode,buy,saveJournal,saveWorkout,setTheme,addChallenge,completeChallenge,saveReminder,askNotifications,
+  const originalRender=render;
+  let lastPage=null;
+  render=function(...args){
+    const current=typeof page==='string'?page:null;
+    const app=document.getElementById('app');
+    const opened=current===lastPage && app?.querySelectorAll ? [...app.querySelectorAll('details.re36-fold[open]')].map(el=>el.firstElementChild?.textContent) : [];
+    const result=originalRender.apply(this,args);
+    if(app?.querySelectorAll)for(const el of app.querySelectorAll('details.re36-fold'))if(opened.includes(el.firstElementChild?.textContent))el.open=true;
+    lastPage=current;
+    return result;
+  };
+  window.RE36={VERSION,open,close,toggleHabit,editHabit,archiveHabit,mealChange,menuGo,menuToday,logMeal,addExclusion,finishDay,setMode,buy,saveJournal,saveWorkout,setTheme,addChallenge,completeChallenge,saveReminder,askNotifications,
     // API de pruebas y futura integración, no muta estado.
     getLevel:level,habitStreak:currentStreak,trainingType:strengthDay,getDailyMeal:mealFor,
     recipeCount:()=>allRecipes().length,getRecipe:(slot,id)=>(MEAL_OPTIONS[slot]||[]).find(r=>r.id===id)||null};

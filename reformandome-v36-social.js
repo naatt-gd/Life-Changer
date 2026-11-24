@@ -24,8 +24,8 @@
       // Consultas pequeñas dentro de reto privado; RLS oculta miembros ajenos.
       for(const row of cache.rows){const r=await client().from(M).select('user_id,alias,progress').eq('challenge_id',row.id).order('progress',{ascending:false}).limit(100);if(!r.error)cache.members[row.id]=r.data||[];}
       cache.loadedAt=Date.now();
-    }catch(err){cache.error='No se han podido cargar los retos. Comprueba el SQL social: '+(err.message||String(err));}
-    finally{cache.loading=false;if(show)window.RE36?.open?.('social');}
+    }catch(err){cache.error='No se han podido cargar los retos. Inténtalo de nuevo.';console.error('RE36 retos:',err);}
+    finally{cache.loading=false;if(show && document.querySelector('.re36-dialog[open]')?.querySelector('[aria-current="page"]')?.textContent==='Amigos')window.RE36?.open?.('social');}
   }
   function randomCode(){
     if(!window.crypto?.getRandomValues)throw new Error('Se necesita una conexión segura HTTPS para crear invitaciones.');
@@ -81,7 +81,7 @@
     const rows=cache.rows;
     return `<div class="re36-row"><button class="primary" onclick="RE36Social.create()">Crear reto privado</button><button class="secondary" onclick="RE36Social.join()">Unirme con código</button><button class="secondary" onclick="RE36Social.refresh(true)">Actualizar</button></div>
       ${cache.error?`<p role="alert">${safe(cache.error)}</p>`:''}
-      ${!rows.length?'<p>Aún no tienes retos visibles. Puedes crear uno e invitar a otras personas.</p>':''}
+      ${!rows.length?'<p>Aún no tienes retos.</p>':''}
       ${rows.map(ch=>{
         const all=cache.members[ch.id]||[],self=all.find(m=>m.user_id===user().id),progressSum=all.reduce((a,m)=>a+Number(m.progress),0),value=ch.team_mode?progressSum:self?.progress||0;
         return `<details class="re36-social-item"><summary><strong>${safe(ch.title)}</strong> · ${ch.team_mode?'Gremio':'Individual'} · ${Math.min(ch.target,value)}/${ch.target}</summary>
