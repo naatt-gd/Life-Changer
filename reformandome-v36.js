@@ -10,7 +10,7 @@
     console.error('RE36: falta app.js o los módulos anteriores.');
     return;
   }
-  const VERSION = '36.2';
+  const VERSION = '36.3';
   const xss = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
   const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
   const iso = dt => { const d0 = new Date(dt); return [d0.getFullYear(),String(d0.getMonth()+1).padStart(2,'0'),String(d0.getDate()).padStart(2,'0')].join('-'); };
@@ -1746,7 +1746,7 @@
       if(selected==='ligero')return 'actividad';
       const p=typeof trainingPlan==='function'?trainingPlan(date):null;
       if(!p)return 'desconocido';
-      if(p.kind==='fuerza')return 'fuerza';
+      if(p.kind==='fuerza')return ['cardio','movilidad'].includes(p.sessionType)?'actividad':'fuerza';
       if(['activo','actividad'].includes(p.kind))return 'actividad';
       if(['descanso','precaucion','suave'].includes(p.kind))return 'descanso';
       return 'actividad';
