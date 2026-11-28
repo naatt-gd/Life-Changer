@@ -10,7 +10,7 @@
     console.error('RE36: falta app.js o los módulos anteriores.');
     return;
   }
-  const VERSION = '36.3';
+  const VERSION = '36.8';
   const xss = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
   const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
   const iso = dt => { const d0 = new Date(dt); return [d0.getFullYear(),String(d0.getMonth()+1).padStart(2,'0'),String(d0.getDate()).padStart(2,'0')].join('-'); };
@@ -1964,6 +1964,17 @@
     html[data-re36theme="contrast"] .re36-dialog button{outline:1px solid #fff}
     @media(max-width:480px){.re36-dialog .re36-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.re36-habit{gap:5px}.re36-habit button{padding:7px 8px}.re36-map{grid-template-columns:repeat(6,minmax(0,1fr))}.re36-stats{grid-template-columns:1fr 1fr}.re36-inner{padding:12px}}
   `;document.head.append(css);
+
+  const cssHeroClean=document.createElement('style');cssHeroClean.textContent=`
+    .avatar-large,.mini-char,.cn-pick,.cn-eq,.cn-character{isolation:isolate;overflow:hidden}
+    .avatar-large{position:relative;background:radial-gradient(circle at 50% 32%,#4e3a63 0,#241a35 58%,#120d1d 100%)!important;height:min(112vw,620px)!important;max-height:620px!important}
+    .avatar-large .cn-character,.mini-char .cn-character{display:flex;align-items:flex-start;justify-content:center;width:100%;height:100%;padding:0;background:transparent!important}
+    .avatar-large .cn-character img{display:block;width:100%!important;height:100%!important;object-fit:contain!important;object-position:center top!important;transform:none!important;clip-path:none!important;filter:none}
+    .mini-char .cn-character img{display:block;width:100%!important;height:100%!important;object-fit:contain!important;object-position:center!important;transform:none!important;clip-path:none!important}
+    .cn-pick img,.cn-eq img{display:block;width:100%!important;aspect-ratio:2 / 3;object-fit:contain!important;object-position:center!important;transform:none!important;clip-path:none!important;background:#121127}
+    .cn-pick,.cn-eq{position:relative;background:linear-gradient(#2e2344,#16152c)!important}
+    .cn-pick::after,.cn-eq::after,.avatar-large::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;box-shadow:inset 0 0 0 1px rgba(255,255,255,.03)}
+  `;document.head.append(cssHeroClean);
   // Enlazamos secciones existentes sin reemplazar el resto del sistema.
   const fold=(title,html)=>`<details class="re36-fold"><summary>${title}</summary>${html}</details>`;
   const oldSettings=settings;
@@ -2024,6 +2035,12 @@
     const oldTraining=training;
     training=function(){return oldTraining()+fold('Registrar mi sesión',workoutHTML());};
   }
+  function refreshHeroImages(){
+    for(const img of document.querySelectorAll('img[src]')){
+      const path=img.getAttribute('src');
+      if(/^\.?\/?cn_(negro|castano|rubio|pelirrojo)_(basica|guerrera|hechicera|noble|viajera)_(sin_alas|luz|draconicas|sombra)\.webp(?:\?[^#]*)?$/.test(path)&&!path.endsWith('?v=368')) img.setAttribute('src',path.split('?')[0]+'?v=368');
+    }
+  }
   const originalRender=render;
   let lastPage=null;
   render=function(...args){
@@ -2033,6 +2050,7 @@
     const result=originalRender.apply(this,args);
     if(app?.querySelectorAll)for(const el of app.querySelectorAll('details.re36-fold'))if(opened.includes(el.firstElementChild?.textContent))el.open=true;
     lastPage=current;
+    refreshHeroImages();
     return result;
   };
   window.RE36={VERSION,open,close,toggleHabit,editHabit,archiveHabit,mealChange,menuGo,menuToday,logMeal,addExclusion,finishDay,setMode,buy,saveJournal,saveWorkout,setTheme,addChallenge,completeChallenge,saveReminder,askNotifications,
@@ -2041,5 +2059,6 @@
     recipeCount:()=>allRecipes().length,getRecipe:(slot,id)=>(MEAL_OPTIONS[slot]||[]).find(r=>r.id===id)||null};
   window.addEventListener('reformandome:account-state',e=>{if(e.detail?.state==='welcome')close();if(e.detail?.state==='ready'){applyTheme();}});
   if(ready())applyTheme();
+  refreshHeroImages();
   window.setInterval?.(reminderTick,60000);
 })();
